@@ -1,5 +1,4 @@
 use crate::note::Note;
-use dirs::data_dir;
 use std::fs::{create_dir_all, read_to_string, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -9,17 +8,23 @@ pub struct Storage {
 }
 
 impl Storage {
-    /// Create a new Storage instance at the specified directory.
-    pub fn new(mut path: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
-        if !path.exists() {
-            create_dir_all(&path)?;
-        }
-        path.push("notes.md");
+    /// Create a new Storage instance with the specified file path.
+    pub fn new(path: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self { file_path: path })
+    }
+
+    fn ensure_parent_dir(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(parent) = self.file_path.parent() {
+            if !parent.exists() && !parent.as_os_str().is_empty() {
+                create_dir_all(parent)?;
+            }
+        }
+        Ok(())
     }
 
     pub fn load_notes(&self) -> Result<Vec<Note>, Box<dyn std::error::Error>> {
         if !self.file_path.exists() {
+            self.ensure_parent_dir()?;
             OpenOptions::new()
                 .write(true)
                 .create(true)
@@ -34,7 +39,7 @@ impl Storage {
         let mut current_note_lines = Vec::new();
 
         for line in lines {
-            if line.starts_with("- [ ] ") && !current_note_lines.is_empty() {
+            if Note::is_note_header(line) && !current_note_lines.is_empty() {
                 if let Some(note) = Note::from_markdown(current_note_lines.as_slice()) {
                     notes.push(note);
                 }
@@ -56,6 +61,7 @@ impl Storage {
     }
 
     pub fn add_note(&self, note: &Note) -> Result<(), Box<dyn std::error::Error>> {
+        self.ensure_parent_dir()?;
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
@@ -64,14 +70,6 @@ impl Storage {
         writeln!(file, "{}", note.to_markdown())?;
         Ok(())
     }
-}
-
-// TODO this function should be somewhere else
-/// Resolves the storage directory using the standard OS data directory.
-pub fn resolve_storage_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let mut path = data_dir().ok_or("Could not find data directory")?;
-    path.push("recall");
-    Ok(path)
 }
 
 #[cfg(test)]
@@ -83,7 +81,8 @@ mod tests {
     #[test]
     fn test_storage_roundtrip() {
         let tmp = tempdir().unwrap();
-        let storage = Storage::new(tmp.path().to_path_buf()).unwrap();
+        let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path).unwrap();
         
         let note = Note::new("Test persistent note".to_string());
         storage.add_note(&note).unwrap();
@@ -96,7 +95,8 @@ mod tests {
     #[test]
     fn test_multi_note_roundtrip() {
         let tmp = tempdir().unwrap();
-        let storage = Storage::new(tmp.path().to_path_buf()).unwrap();
+        let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path).unwrap();
 
         let dt1 = Local.with_ymd_and_hms(2026, 3, 28, 10, 0, 0).unwrap();
         let note1 = Note::from_parts(dt1, "Note 1".to_string());
@@ -117,7 +117,8 @@ mod tests {
     #[test]
     fn test_multiline_note_roundtrip() {
         let tmp = tempdir().unwrap();
-        let storage = Storage::new(tmp.path().to_path_buf()).unwrap();
+        let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path).unwrap();
         
         let text = "Line 1\nLine 2\nLine 3";
         let note = Note::new(text.to_string());
@@ -131,10 +132,10 @@ mod tests {
     #[test]
     fn test_empty_file_load() {
         let tmp = tempdir().unwrap();
-        let storage = Storage::new(tmp.path().to_path_buf()).unwrap();
+        let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path.clone()).unwrap();
         
         // Ensure file exists but is empty
-        let file_path = tmp.path().join("notes.md");
         std::fs::File::create(&file_path).unwrap();
         
         let loaded = storage.load_notes().unwrap();
@@ -144,9 +145,9 @@ mod tests {
     #[test]
     fn test_load_notes_with_garbage_content() {
         let tmp = tempdir().unwrap();
-        let storage = Storage::new(tmp.path().to_path_buf()).unwrap();
-        
         let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path.clone()).unwrap();
+        
         std::fs::write(&file_path, "This is garbage\nIt doesn't start with the note prefix").unwrap();
         
         let loaded = storage.load_notes().unwrap();
@@ -159,19 +160,65 @@ mod tests {
         let path = tmp.path().to_path_buf();
         std::fs::create_dir_all(&path).unwrap();
         
-        let storage = Storage::new(path.clone()).unwrap();
-        let expected_file = path.join("notes.md");
+        let file_path = path.join("notes.md");
+        let storage = Storage::new(file_path.clone()).unwrap();
         
         // File shouldn't exist yet
-        assert!(!expected_file.exists());
+        assert!(!file_path.exists());
         
         storage.load_notes().unwrap(); // this creates the file
-        assert!(expected_file.exists());
+        assert!(file_path.exists());
     }
 
     #[test]
-    fn test_resolve_path_returns_standard_dir() {
-        let path = resolve_storage_path().unwrap();
-        assert_eq!(path.file_name().unwrap(), "recall");
+    fn test_nested_directory_creation() {
+        let tmp = tempdir().unwrap();
+        let file_path = tmp.path().join("a/b/c/notes.md");
+        
+        // Ensure parent directories do not exist
+        assert!(!tmp.path().join("a").exists());
+        
+        let storage = Storage::new(file_path.clone()).unwrap();
+        
+        // Constructor shouldn't create dirs anymore
+        assert!(!tmp.path().join("a").exists());
+
+        storage.load_notes().unwrap();
+        
+        // Parent directories should be created now
+        assert!(tmp.path().join("a/b/c").exists());
+        assert!(file_path.exists());
+    }
+
+    #[test]
+    fn test_note_body_with_note_like_line_is_not_split() {
+        let tmp = tempdir().unwrap();
+        let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path).unwrap();
+        
+        let text = "Line 1\n- [ ] Buy milk\nLine 3";
+        let note = Note::new(text.to_string());
+        storage.add_note(&note).unwrap();
+        
+        let loaded = storage.load_notes().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].text, text);
+    }
+
+    #[test]
+    fn test_note_body_with_real_timestamp_is_split() {
+        let tmp = tempdir().unwrap();
+        let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path).unwrap();
+        
+        // This simulates someone manually typing a full header inside a note body
+        let text = "Line 1\n- [ ] 2026-03-28 14:30:00\nLine 3";
+        let note = Note::new(text.to_string());
+        storage.add_note(&note).unwrap();
+        
+        let loaded = storage.load_notes().unwrap();
+        // Since we split on anything matching Note::is_note_header, this should split.
+        // It's an acceptable edge case.
+        assert_eq!(loaded.len(), 2);
     }
 }
