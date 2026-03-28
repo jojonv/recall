@@ -1,5 +1,5 @@
 use clap::Parser;
-use recall::{note::Note, storage::Storage, tui::run_tui};
+use recall::{note::Note, storage::{Storage, resolve_storage_path}, tui::run_tui};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -15,7 +15,8 @@ struct Cli {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    let storage = Storage::new()?;
+    let storage_path = resolve_storage_path()?;
+    let storage = Storage::new(storage_path)?;
 
     // If note text is provided, add it
     if let Some(note_text) = cli.note_text {
