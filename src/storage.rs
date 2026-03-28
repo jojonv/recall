@@ -21,6 +21,7 @@ impl Storage {
         Ok(Self { file_path: path })
     }
 
+
     pub fn load_notes(&self) -> Result<Vec<Note>, Box<dyn std::error::Error>> {
         // Create the file if it doesn't exist
         if !self.file_path.exists() {
