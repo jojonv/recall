@@ -32,7 +32,7 @@ alias r=recall
 
 ```sh
 recall buy groceries
-recall fix the login bug #urgent
+recall fix the login bug
 ```
 
 ### Browse notes (TUI)
