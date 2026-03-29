@@ -1,6 +1,6 @@
 # recall — User Guide
 
-A CLI note-taking tool with a fullscreen TUI browser, scriptable list output, and configurable notebooks. Notes are stored in a single Obsidian-compatible markdown file.
+A CLI note-taking tool with a fullscreen TUI browser and configurable notebooks. Notes are stored in a single Obsidian-compatible markdown file.
 
 ## Setup
 
@@ -24,26 +24,23 @@ All examples below use `r` as the command.
 |---|---|
 | `r` | Open TUI browser |
 | `r "buy groceries"` | Add note (shorthand) |
-| `r add "buy groceries"` | Add note (explicit) |
-| `r list` | List notes to stdout |
-| `r w "meeting at 3"` | Add note to `w` notebook |
-| `r w list` | List notes from `w` notebook |
+| `r buy groceries` | Add note (unquoted) |
 | `r w` | Open TUI for `w` notebook |
-| `r w add "sprint review"` | Add note to `w` (explicit) |
+| `r w "meeting at 3"` | Add note to `w` notebook (shorthand) |
+| `r w meeting at 3` | Add note to `w` notebook (unquoted) |
 
 ## Adding Notes
 
 ### Default notebook
 
-Three ways to add a note to the default notebook:
+Add a note to the default notebook:
 
 ```
 r "deploy v2 before lunch"
-r add "deploy v2 before lunch"
 r deploy v2 before lunch
 ```
 
-The first is a quoted positional argument. The second uses the `add` subcommand. The third is unquoted — any unrecognized input is treated as note text.
+The first is a quoted positional argument. The second is unquoted — any unrecognized input is treated as note text.
 
 ### Specific notebook
 
@@ -51,10 +48,10 @@ If you have notebooks configured (see [Notebooks](#notebooks)):
 
 ```
 r w "standup: blocked on API"
-r w add "standup: blocked on API"
+r w standup: blocked on API
 ```
 
-The first form is a shorthand — `w` is detected as a notebook name and the rest becomes note text. The second is explicit.
+`w` is detected as a notebook name and the rest becomes note text.
 
 ### Multiline notes
 
@@ -74,36 +71,6 @@ r $'header:\n- item one\n- item two'
 ### Validation
 
 Empty and whitespace-only notes are rejected with an error.
-
-## Listing Notes
-
-```
-r list
-```
-
-Output format — one line per note, newest first:
-
-```
-[ ] 2026-03-29 14:30:00 deploy v2 before lunch
-[x] 2026-03-29 09:00:00 fix bug #42
-[ ] 2026-03-28 17:15:00 call dentist
-```
-
-- `[ ]` — open note
-- `[x]` — done/completed note
-- Multiline notes show only the first line in list output
-
-### Piping and scripting
-
-The list command writes plain text to stdout, making it pipe-friendly:
-
-```
-r list | grep deploy
-r list | head -5
-r w list | wc -l
-```
-
-If there are no notes, it prints `No notes found.` to stdout and exits successfully.
 
 ## TUI Browser
 
@@ -174,8 +141,6 @@ w = "~/notes/work.md"
 p = "~/notes/personal.md"
 ```
 
-**Avoid** naming a notebook `add` or `list` — these are reserved subcommands and will never be matched as notebook names.
-
 ### How notebook routing works
 
 When you run a command with arguments that aren't recognized subcommands:
@@ -198,8 +163,7 @@ Once a notebook is matched, the remaining arguments determine the action:
 |---|---|
 | `r w` | Open TUI for `w` |
 | `r w "some text"` | Add note to `w` (shorthand) |
-| `r w add "some text"` | Add note to `w` (explicit) |
-| `r w list` | List notes from `w` |
+| `r w some text` | Add note to `w` (unquoted) |
 
 ## Storage Format
 
