@@ -39,7 +39,7 @@ impl Note {
     pub fn to_markdown(&self) -> String {
         let checkbox = if self.done { "[x]" } else { "[ ]" };
         format!(
-            "- {} {}\n{}",
+            "- {} {} {}",
             checkbox,
             self.timestamp.format("%Y-%m-%d %H:%M:%S"),
             self.text
@@ -63,8 +63,16 @@ impl Note {
             chrono::LocalResult::None => return None,
         };
 
-        // The text is in the following lines until the next note or EOF
-        let text = lines[1..].join("\n").trim().to_string();
+        // Extract text from the first line (after timestamp) and append any following lines
+        let header_text = line.get(25..).unwrap_or("").trim();
+        let following_text = lines[1..].join("\n");
+        let text = if following_text.is_empty() {
+            header_text.to_string()
+        } else {
+            format!("{}\n{}", header_text, following_text)
+                .trim()
+                .to_string()
+        };
 
         Some(Self {
             timestamp,
@@ -78,7 +86,7 @@ impl Note {
     }
 
     pub fn parse_note_header(line: &str) -> Option<(NaiveDateTime, bool)> {
-        // Expected formats: "- [ ] 2026-03-28 14:30:00" (25 chars) or "- [x] 2026-03-28 14:30:00" (25 chars)
+        // Expected formats: "- [ ] 2026-03-28 14:30:00 ..." or "- [x] 2026-03-28 14:30:00 ..."
         let done = if line.starts_with("- [x] ") || line.starts_with("- [X] ") {
             true
         } else if line.starts_with("- [ ] ") {
@@ -87,11 +95,12 @@ impl Note {
             return None;
         };
 
-        if line.len() != 25 {
+        // Minimum length is 25 chars (header without text)
+        if line.len() < 25 {
             return None;
         }
 
-        let timestamp_str = &line[6..];
+        let timestamp_str = &line[6..25];
         NaiveDateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S")
             .ok()
             .map(|dt| (dt, done))
@@ -108,12 +117,12 @@ mod tests {
         let dt = Local.with_ymd_and_hms(2026, 3, 28, 14, 30, 0).unwrap();
         let note = Note::from_parts(dt, "Test Note".to_string());
         let md = note.to_markdown();
-        assert_eq!(md, "- [ ] 2026-03-28 14:30:00\nTest Note");
+        assert_eq!(md, "- [ ] 2026-03-28 14:30:00 Test Note");
     }
 
     #[test]
     fn test_note_from_markdown() {
-        let lines = ["- [ ] 2026-03-28 14:30:00", "Line 1", "Line 2"];
+        let lines = ["- [ ] 2026-03-28 14:30:00 Line 1", "Line 2"];
         let note = Note::from_markdown(&lines).unwrap();
         assert_eq!(note.text, "Line 1\nLine 2");
         assert_eq!(
@@ -124,9 +133,9 @@ mod tests {
 
     #[test]
     fn test_note_from_markdown_trims_whitespace() {
-        let lines = ["- [ ] 2026-03-28 14:30:00", "  Line 1  ", "  Line 2  "];
+        let lines = ["- [ ] 2026-03-28 14:30:00   Line 1  ", "  Line 2  "];
         let note = Note::from_markdown(&lines).unwrap();
-        assert_eq!(note.text, "Line 1  \n  Line 2");
+        assert_eq!(note.text, "Line 1\n  Line 2");
     }
 
     #[test]
@@ -140,12 +149,11 @@ mod tests {
         assert!(Note::is_note_header("- [ ] 2026-03-28 14:30:00"));
         assert!(Note::is_note_header("- [x] 2026-03-28 14:30:00"));
         assert!(Note::is_note_header("- [X] 2026-03-28 14:30:00"));
+        assert!(Note::is_note_header("- [ ] 2026-03-28 14:30:00 Buy milk"));
         assert!(!Note::is_note_header("- [ ] 2026-03-28 14:30")); // Missing seconds
-        assert!(!Note::is_note_header("- [ ] Buy milk"));
         assert!(!Note::is_note_header("No prefix 2026-03-28 14:30:00"));
 
         // Boundary cases
-        assert!(!Note::is_note_header("- [ ] 2026-03-28 14:30:00extra")); // Trailing chars
         assert!(!Note::is_note_header("- [ ] 2026-03-28 14:30:0")); // Too short (24 chars)
     }
 
@@ -154,12 +162,12 @@ mod tests {
         let dt = Local.with_ymd_and_hms(2026, 3, 28, 14, 30, 0).unwrap();
         let note = Note::from_parts_with_done(dt, "Test Note".to_string(), true);
         let md = note.to_markdown();
-        assert_eq!(md, "- [x] 2026-03-28 14:30:00\nTest Note");
+        assert_eq!(md, "- [x] 2026-03-28 14:30:00 Test Note");
     }
 
     #[test]
     fn test_note_from_markdown_done() {
-        let lines = ["- [x] 2026-03-28 14:30:00", "Line 1", "Line 2"];
+        let lines = ["- [x] 2026-03-28 14:30:00 Line 1", "Line 2"];
         let note = Note::from_markdown(&lines).unwrap();
         assert_eq!(note.text, "Line 1\nLine 2");
         assert!(note.done);
@@ -171,14 +179,14 @@ mod tests {
 
     #[test]
     fn test_note_from_markdown_unchecked() {
-        let lines = ["- [ ] 2026-03-28 14:30:00", "Line 1"];
+        let lines = ["- [ ] 2026-03-28 14:30:00 Line 1"];
         let note = Note::from_markdown(&lines).unwrap();
         assert!(!note.done);
     }
 
     #[test]
     fn test_note_from_markdown_done_uppercase() {
-        let lines = ["- [X] 2026-03-28 14:30:00", "Line 1"];
+        let lines = ["- [X] 2026-03-28 14:30:00 Line 1"];
         let note = Note::from_markdown(&lines).unwrap();
         assert!(note.done);
     }
