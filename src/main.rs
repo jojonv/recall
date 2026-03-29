@@ -9,9 +9,6 @@ use recall::{
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Shorthand: add note text directly
-    note_text: Option<String>,
-
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -53,17 +50,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             handle_external_command(args, &config, &default_storage)?;
         }
         None => {
-            // No explicit subcommand - check positional shorthand or TUI
-            if let Some(note_text) = cli.note_text {
-                if note_text.trim().is_empty() {
-                    return Err("Note text cannot be empty".into());
-                }
-                add_note(&default_storage, note_text)?;
-            } else {
-                // Launch TUI for default notebook
-                let notes = default_storage.load_notes()?;
-                run_tui(notes, &default_storage)?;
-            }
+            let notes = default_storage.load_notes()?;
+            run_tui(notes, &default_storage)?;
         }
     }
 
@@ -96,7 +84,6 @@ fn handle_external_command(
     default_storage: &Storage,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if args.is_empty() {
-        // Empty external command shouldn't happen, but launch TUI as fallback
         let notes = default_storage.load_notes()?;
         run_tui(notes, default_storage)?;
         return Ok(());
