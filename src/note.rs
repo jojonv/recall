@@ -96,6 +96,17 @@ impl Note {
             .ok()
             .map(|dt| (dt, done))
     }
+
+    pub fn display_line(&self) -> String {
+        let checkbox = if self.done { "[x]" } else { "[ ]" };
+        let first_line = self.text.lines().next().unwrap_or("");
+        format!(
+            "{} {} {}",
+            checkbox,
+            self.timestamp.format("%Y-%m-%d %H:%M:%S"),
+            first_line
+        )
+    }
 }
 
 #[cfg(test)]
@@ -192,5 +203,29 @@ mod tests {
         assert!(note.done);
         note.toggle_done();
         assert!(!note.done);
+    }
+
+    #[test]
+    fn test_display_line_open() {
+        let dt = Local.with_ymd_and_hms(2026, 3, 28, 14, 30, 0).unwrap();
+        let note = Note::from_parts(dt, "This is my note\nWith multiple lines".to_string());
+        let line = note.display_line();
+        assert_eq!(line, "[ ] 2026-03-28 14:30:00 This is my note");
+    }
+
+    #[test]
+    fn test_display_line_done() {
+        let dt = Local.with_ymd_and_hms(2026, 3, 28, 14, 30, 0).unwrap();
+        let note = Note::from_parts_with_done(dt, "Completed task".to_string(), true);
+        let line = note.display_line();
+        assert_eq!(line, "[x] 2026-03-28 14:30:00 Completed task");
+    }
+
+    #[test]
+    fn test_display_line_empty() {
+        let dt = Local.with_ymd_and_hms(2026, 3, 28, 14, 30, 0).unwrap();
+        let note = Note::from_parts(dt, "".to_string());
+        let line = note.display_line();
+        assert_eq!(line, "[ ] 2026-03-28 14:30:00 ");
     }
 }
