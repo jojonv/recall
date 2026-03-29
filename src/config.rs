@@ -1,11 +1,31 @@
-use serde::Deserialize;
-use std::path::PathBuf;
-use std::fs;
 use dirs::home_dir;
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Deserialize, Default, Debug, PartialEq)]
 pub struct Config {
     pub file: Option<String>,
+    pub notebooks: Option<HashMap<String, String>>,
+}
+
+impl Config {
+    pub fn resolve_notebook_path(&self, name: &str) -> Option<PathBuf> {
+        let notebooks = self.notebooks.as_ref()?;
+        let path = notebooks.get(name)?;
+        Self::expand_path(path)
+    }
+
+    pub fn expand_path(path: &str) -> Option<PathBuf> {
+        if let Some(stripped) = path.strip_prefix("~/") {
+            home_dir().map(|home| home.join(stripped))
+        } else if path == "~" {
+            home_dir()
+        } else {
+            Some(PathBuf::from(path))
+        }
+    }
 }
 
 pub fn load_config(explicit_path: Option<PathBuf>) -> Result<Config, Box<dyn std::error::Error>> {
@@ -34,16 +54,10 @@ pub fn load_config(explicit_path: Option<PathBuf>) -> Result<Config, Box<dyn std
 
 pub fn resolve_file_path(config: &Config) -> Result<PathBuf, Box<dyn std::error::Error>> {
     if let Some(file_path) = &config.file {
-        if let Some(stripped) = file_path.strip_prefix("~/") {
-            if let Some(home) = home_dir() {
-                return Ok(home.join(stripped));
-            }
-        } else if file_path == "~" {
-            if let Some(home) = home_dir() {
-                return Ok(home);
-            }
+        if let Some(path) = Config::expand_path(file_path) {
+            return Ok(path);
         }
-        return Ok(PathBuf::from(file_path));
+        return Err("Could not resolve file path: home directory not found".into());
     }
 
     let mut path = home_dir().ok_or("Could not find home directory")?;
@@ -69,6 +83,7 @@ mod tests {
     fn test_resolve_file_path_custom() {
         let config = Config {
             file: Some("/tmp/test_notes.md".to_string()),
+            notebooks: None,
         };
         let path = resolve_file_path(&config).unwrap();
         assert_eq!(path.to_str().unwrap(), "/tmp/test_notes.md");
@@ -78,6 +93,7 @@ mod tests {
     fn test_resolve_file_path_tilde() {
         let config = Config {
             file: Some("~/vault/notes.md".to_string()),
+            notebooks: None,
         };
         let path = resolve_file_path(&config).unwrap();
         let home = home_dir().unwrap();
@@ -89,6 +105,7 @@ mod tests {
     fn test_resolve_file_path_tilde_only() {
         let config = Config {
             file: Some("~/".to_string()),
+            notebooks: None,
         };
         let path = resolve_file_path(&config).unwrap();
         let home = home_dir().unwrap();
@@ -99,7 +116,7 @@ mod tests {
     fn test_load_config_valid() {
         let mut file = NamedTempFile::new().unwrap();
         writeln!(file, "file = '/path/to/notes.md'").unwrap();
-        
+
         let config = load_config(Some(file.path().to_path_buf())).unwrap();
         assert_eq!(config.file, Some("/path/to/notes.md".to_string()));
     }
@@ -122,8 +139,39 @@ mod tests {
     fn test_load_config_invalid_toml() {
         let mut file = NamedTempFile::new().unwrap();
         writeln!(file, "invalid = [toml").unwrap();
-        
+
         let result = load_config(Some(file.path().to_path_buf()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_notebook_path() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "file = '/path/to/default.md'").unwrap();
+        writeln!(file, "[notebooks]").unwrap();
+        writeln!(file, "w = '/path/to/work.md'").unwrap();
+        writeln!(file, "p = '~/notes/personal.md'").unwrap();
+
+        let config = load_config(Some(file.path().to_path_buf())).unwrap();
+
+        // Test work notebook
+        let work_path = config.resolve_notebook_path("w");
+        assert!(work_path.is_some());
+        assert_eq!(work_path.unwrap().to_str().unwrap(), "/path/to/work.md");
+
+        // Test personal notebook with tilde expansion
+        let personal_path = config.resolve_notebook_path("p");
+        assert!(personal_path.is_some());
+        let home = home_dir().unwrap();
+        assert_eq!(personal_path.unwrap(), home.join("notes/personal.md"));
+
+        // Test non-existent notebook
+        assert!(config.resolve_notebook_path("x").is_none());
+    }
+
+    #[test]
+    fn test_resolve_notebook_path_no_notebooks() {
+        let config = Config::default();
+        assert!(config.resolve_notebook_path("w").is_none());
     }
 }
