@@ -1,6 +1,6 @@
 use crate::note::Note;
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -62,10 +62,7 @@ impl App {
             state.select(Some(0));
         }
 
-        Self {
-            state,
-            items,
-        }
+        Self { state, items }
     }
 
     fn next(&mut self) {
@@ -125,14 +122,17 @@ pub fn run_tui(notes: Vec<Note>) -> Result<(), Box<dyn std::error::Error>> {
             f.render_widget(status, chunks[1]);
         })?;
 
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => break,
-                    KeyCode::Char('j') | KeyCode::Down => app.next(),
-                    KeyCode::Char('k') | KeyCode::Up => app.previous(),
-                    _ => {}
-                }
+        if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
             }
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Char('j') | KeyCode::Down => app.next(),
+                KeyCode::Char('k') | KeyCode::Up => app.previous(),
+                _ => {}
+            }
+        }
     }
 
     Ok(())
@@ -171,7 +171,7 @@ mod tests {
     fn test_app_empty_navigation() {
         let mut app = App::new(vec![]);
         assert_eq!(app.state.selected(), None);
-        
+
         app.next();
         assert_eq!(app.state.selected(), Some(0)); // Depending on logic, might select 0
     }
