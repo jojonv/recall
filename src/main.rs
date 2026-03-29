@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Otherwise, launch TUI
     let notes = storage.load_notes()?;
-    run_tui(notes)?;
+    run_tui(notes, &storage)?;
 
     Ok(())
 }

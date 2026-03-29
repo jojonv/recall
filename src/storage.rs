@@ -70,23 +70,37 @@ impl Storage {
         writeln!(file, "{}", note.to_markdown())?;
         Ok(())
     }
+
+    pub fn save_notes(&self, notes: &[Note]) -> Result<(), Box<dyn std::error::Error>> {
+        self.ensure_parent_dir()?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&self.file_path)?;
+
+        for note in notes {
+            writeln!(file, "{}", note.to_markdown())?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use chrono::{Local, TimeZone};
+    use tempfile::tempdir;
 
     #[test]
     fn test_storage_roundtrip() {
         let tmp = tempdir().unwrap();
         let file_path = tmp.path().join("notes.md");
         let storage = Storage::new(file_path).unwrap();
-        
+
         let note = Note::new("Test persistent note".to_string());
         storage.add_note(&note).unwrap();
-        
+
         let loaded = storage.load_notes().unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].text, "Test persistent note");
@@ -100,7 +114,7 @@ mod tests {
 
         let dt1 = Local.with_ymd_and_hms(2026, 3, 28, 10, 0, 0).unwrap();
         let note1 = Note::from_parts(dt1, "Note 1".to_string());
-        
+
         let dt2 = Local.with_ymd_and_hms(2026, 3, 28, 11, 0, 0).unwrap();
         let note2 = Note::from_parts(dt2, "Note 2".to_string());
 
@@ -119,11 +133,11 @@ mod tests {
         let tmp = tempdir().unwrap();
         let file_path = tmp.path().join("notes.md");
         let storage = Storage::new(file_path).unwrap();
-        
+
         let text = "Line 1\nLine 2\nLine 3";
         let note = Note::new(text.to_string());
         storage.add_note(&note).unwrap();
-        
+
         let loaded = storage.load_notes().unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].text, text);
@@ -134,10 +148,10 @@ mod tests {
         let tmp = tempdir().unwrap();
         let file_path = tmp.path().join("notes.md");
         let storage = Storage::new(file_path.clone()).unwrap();
-        
+
         // Ensure file exists but is empty
         std::fs::File::create(&file_path).unwrap();
-        
+
         let loaded = storage.load_notes().unwrap();
         assert!(loaded.is_empty());
     }
@@ -147,9 +161,13 @@ mod tests {
         let tmp = tempdir().unwrap();
         let file_path = tmp.path().join("notes.md");
         let storage = Storage::new(file_path.clone()).unwrap();
-        
-        std::fs::write(&file_path, "This is garbage\nIt doesn't start with the note prefix").unwrap();
-        
+
+        std::fs::write(
+            &file_path,
+            "This is garbage\nIt doesn't start with the note prefix",
+        )
+        .unwrap();
+
         let loaded = storage.load_notes().unwrap();
         assert!(loaded.is_empty());
     }
@@ -159,13 +177,13 @@ mod tests {
         let tmp = tempdir().unwrap();
         let path = tmp.path().to_path_buf();
         std::fs::create_dir_all(&path).unwrap();
-        
+
         let file_path = path.join("notes.md");
         let storage = Storage::new(file_path.clone()).unwrap();
-        
+
         // File shouldn't exist yet
         assert!(!file_path.exists());
-        
+
         storage.load_notes().unwrap(); // this creates the file
         assert!(file_path.exists());
     }
@@ -174,17 +192,17 @@ mod tests {
     fn test_nested_directory_creation() {
         let tmp = tempdir().unwrap();
         let file_path = tmp.path().join("a/b/c/notes.md");
-        
+
         // Ensure parent directories do not exist
         assert!(!tmp.path().join("a").exists());
-        
+
         let storage = Storage::new(file_path.clone()).unwrap();
-        
+
         // Constructor shouldn't create dirs anymore
         assert!(!tmp.path().join("a").exists());
 
         storage.load_notes().unwrap();
-        
+
         // Parent directories should be created now
         assert!(tmp.path().join("a/b/c").exists());
         assert!(file_path.exists());
@@ -195,11 +213,11 @@ mod tests {
         let tmp = tempdir().unwrap();
         let file_path = tmp.path().join("notes.md");
         let storage = Storage::new(file_path).unwrap();
-        
+
         let text = "Line 1\n- [ ] Buy milk\nLine 3";
         let note = Note::new(text.to_string());
         storage.add_note(&note).unwrap();
-        
+
         let loaded = storage.load_notes().unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].text, text);
@@ -210,15 +228,62 @@ mod tests {
         let tmp = tempdir().unwrap();
         let file_path = tmp.path().join("notes.md");
         let storage = Storage::new(file_path).unwrap();
-        
+
         // This simulates someone manually typing a full header inside a note body
         let text = "Line 1\n- [ ] 2026-03-28 14:30:00\nLine 3";
         let note = Note::new(text.to_string());
         storage.add_note(&note).unwrap();
-        
+
         let loaded = storage.load_notes().unwrap();
         // Since we split on anything matching Note::is_note_header, this should split.
         // It's an acceptable edge case.
         assert_eq!(loaded.len(), 2);
+    }
+
+    #[test]
+    fn test_save_notes_roundtrip() {
+        let tmp = tempdir().unwrap();
+        let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path).unwrap();
+
+        let dt1 = Local.with_ymd_and_hms(2026, 3, 28, 10, 0, 0).unwrap();
+        let note1 = Note::from_parts_with_done(dt1, "Note 1".to_string(), true);
+
+        let dt2 = Local.with_ymd_and_hms(2026, 3, 28, 11, 0, 0).unwrap();
+        let note2 = Note::from_parts_with_done(dt2, "Note 2".to_string(), false);
+
+        let notes = vec![note1, note2];
+        storage.save_notes(&notes).unwrap();
+
+        let loaded = storage.load_notes().unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].text, "Note 2");
+        assert!(!loaded[0].done);
+        assert_eq!(loaded[1].text, "Note 1");
+        assert!(loaded[1].done);
+    }
+
+    #[test]
+    fn test_save_notes_with_toggles() {
+        let tmp = tempdir().unwrap();
+        let file_path = tmp.path().join("notes.md");
+        let storage = Storage::new(file_path).unwrap();
+
+        // Create initial notes
+        let note1 = Note::new("First note".to_string());
+        let note2 = Note::new("Second note".to_string());
+        storage.add_note(&note1).unwrap();
+        storage.add_note(&note2).unwrap();
+
+        // Load, toggle first note, and save
+        let mut notes = storage.load_notes().unwrap();
+        notes[0].toggle_done();
+        storage.save_notes(&notes).unwrap();
+
+        // Reload and verify
+        let loaded = storage.load_notes().unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded[0].done);
+        assert!(!loaded[1].done);
     }
 }

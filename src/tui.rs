@@ -1,4 +1,5 @@
 use crate::note::Note;
+use crate::storage::Storage;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -40,12 +41,21 @@ impl Drop for TerminalGuard {
 
 struct App {
     state: ListState,
-    items: Vec<ListItem<'static>>,
+    notes: Vec<Note>,
 }
 
 impl App {
     fn new(notes: Vec<Note>) -> Self {
-        let items: Vec<ListItem> = notes
+        let mut state = ListState::default();
+        if !notes.is_empty() {
+            state.select(Some(0));
+        }
+
+        Self { state, notes }
+    }
+
+    fn build_list_items(&self) -> Vec<ListItem<'static>> {
+        self.notes
             .iter()
             .map(|note| {
                 let content = format!(
@@ -53,22 +63,22 @@ impl App {
                     note.timestamp.format("%Y-%m-%d %H:%M:%S"),
                     note.text.lines().next().unwrap_or("")
                 );
-                ListItem::new(content)
+                let style = if note.done {
+                    Style::default()
+                        .add_modifier(Modifier::DIM)
+                        .add_modifier(Modifier::CROSSED_OUT)
+                } else {
+                    Style::default()
+                };
+                ListItem::new(content).style(style)
             })
-            .collect();
-
-        let mut state = ListState::default();
-        if !items.is_empty() {
-            state.select(Some(0));
-        }
-
-        Self { state, items }
+            .collect()
     }
 
     fn next(&mut self) {
         let i = match self.state.selected() {
             Some(i) => {
-                if i >= self.items.len().saturating_sub(1) {
+                if i >= self.notes.len().saturating_sub(1) {
                     0
                 } else {
                     i + 1
@@ -83,7 +93,7 @@ impl App {
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.items.len().saturating_sub(1)
+                    self.notes.len().saturating_sub(1)
                 } else {
                     i - 1
                 }
@@ -94,7 +104,7 @@ impl App {
     }
 }
 
-pub fn run_tui(notes: Vec<Note>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_tui(notes: Vec<Note>, storage: &Storage) -> Result<(), Box<dyn std::error::Error>> {
     let mut guard = TerminalGuard::new()?;
     let mut app = App::new(notes);
 
@@ -104,7 +114,8 @@ pub fn run_tui(notes: Vec<Note>) -> Result<(), Box<dyn std::error::Error>> {
                 .constraints([Constraint::Min(1), Constraint::Length(1)].as_ref())
                 .split(f.area());
 
-            let list = List::new(app.items.clone())
+            let items = app.build_list_items();
+            let list = List::new(items)
                 .block(Block::default().borders(Borders::ALL).title("Recall Notes"))
                 .highlight_style(
                     Style::default()
@@ -115,7 +126,7 @@ pub fn run_tui(notes: Vec<Note>) -> Result<(), Box<dyn std::error::Error>> {
 
             f.render_stateful_widget(list, chunks[0], &mut app.state);
 
-            let status_text = "q/Esc: quit | ↑/k: up | ↓/j: down";
+            let status_text = "q/Esc: quit | ↑/k: up | ↓/j: down | d: done";
             let status = Paragraph::new(status_text)
                 .style(Style::default().fg(Color::Gray))
                 .alignment(Alignment::Center);
@@ -130,6 +141,18 @@ pub fn run_tui(notes: Vec<Note>) -> Result<(), Box<dyn std::error::Error>> {
                 KeyCode::Char('q') | KeyCode::Esc => break,
                 KeyCode::Char('j') | KeyCode::Down => app.next(),
                 KeyCode::Char('k') | KeyCode::Up => app.previous(),
+                KeyCode::Char('d') => {
+                    if let Some(i) = app.state.selected() {
+                        if i < app.notes.len() {
+                            // Clone, toggle, and save before mutating
+                            let mut notes_to_save = app.notes.clone();
+                            notes_to_save[i].toggle_done();
+                            if storage.save_notes(&notes_to_save).is_ok() {
+                                app.notes = notes_to_save;
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -174,5 +197,33 @@ mod tests {
 
         app.next();
         assert_eq!(app.state.selected(), Some(0)); // Depending on logic, might select 0
+
+        // Toggle on empty app should not panic - directly toggle via index
+        if let Some(i) = app.state.selected() {
+            if i < app.notes.len() {
+                app.notes[i].toggle_done();
+            }
+        }
+    }
+
+    #[test]
+    fn test_app_toggle_done() {
+        let notes = vec![
+            Note::new("Note 1".to_string()),
+            Note::new("Note 2".to_string()),
+        ];
+        let mut app = App::new(notes);
+
+        assert!(!app.notes[0].done);
+        app.notes[0].toggle_done();
+        assert!(app.notes[0].done);
+        app.notes[0].toggle_done();
+        assert!(!app.notes[0].done);
+
+        // Move to next and toggle
+        app.next();
+        assert!(!app.notes[1].done);
+        app.notes[1].toggle_done();
+        assert!(app.notes[1].done);
     }
 }
