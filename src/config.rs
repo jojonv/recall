@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::fs;
-use dirs::{home_dir, data_dir};
+use dirs::home_dir;
 
 #[derive(Deserialize, Default, Debug, PartialEq)]
 pub struct Config {
@@ -46,8 +46,8 @@ pub fn resolve_file_path(config: &Config) -> Result<PathBuf, Box<dyn std::error:
         return Ok(PathBuf::from(file_path));
     }
 
-    let mut path = data_dir().ok_or("Could not find data directory")?;
-    path.push("recall");
+    let mut path = home_dir().ok_or("Could not find home directory")?;
+    path.push(".recall");
     path.push("notes.md");
     Ok(path)
 }
@@ -62,7 +62,7 @@ mod tests {
     fn test_resolve_file_path_default() {
         let config = Config::default();
         let path = resolve_file_path(&config).unwrap();
-        assert!(path.ends_with("recall/notes.md") || path.ends_with("recall\\notes.md"));
+        assert!(path.ends_with(".recall/notes.md") || path.ends_with(".recall\\notes.md"));
     }
 
     #[test]
