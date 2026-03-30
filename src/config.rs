@@ -48,8 +48,37 @@ pub fn load_config(explicit_path: Option<PathBuf>) -> Result<Config, Box<dyn std
     if content.trim().is_empty() {
         return Ok(Config::default());
     }
-    let config: Config = toml::from_str(&content)?;
-    Ok(config)
+    match toml::from_str::<Config>(&content) {
+        Ok(config) => Ok(config),
+        Err(e) => {
+            // Check if the error might be due to Windows paths with backslashes
+            // in double-quoted strings (TOML requires escaping backslashes in double quotes)
+            if content.contains('"') {
+                // Look for double-quoted strings containing backslashes
+                let scan_result = content.chars().fold(
+                    (false, false),
+                    |(in_double_quote, found_backslash), c| {
+                        if c == '"' {
+                            (!in_double_quote, found_backslash)
+                        } else if in_double_quote && c == '\\' {
+                            (true, true)
+                        } else {
+                            (in_double_quote, found_backslash)
+                        }
+                    },
+                );
+
+                if scan_result.1 {
+                    // found_backslash is true
+                    return Err(format!(
+                        "Failed to parse config.toml: {}\n\nHint: Windows paths with backslashes must use single quotes:\n\n  [notebooks]\n  w = 'C:\\Data\\Obsidian\\vault\\notes.md'\n\nOr escape the backslashes in double quotes:\n\n  w = \"C:\\\\Data\\\\Obsidian\\\\vault\\\\notes.md\"",
+                        e
+                    ).into());
+                }
+            }
+            Err(e.into())
+        }
+    }
 }
 
 pub fn resolve_file_path(config: &Config) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -173,5 +202,69 @@ mod tests {
     fn test_resolve_notebook_path_no_notebooks() {
         let config = Config::default();
         assert!(config.resolve_notebook_path("w").is_none());
+    }
+
+    #[test]
+    fn test_load_config_windows_path_hint() {
+        let mut file = NamedTempFile::new().unwrap();
+        // Write raw TOML with unescaped backslashes in double quotes (invalid TOML)
+        // Using r#"..."# style to write literal content
+        file.write_all(
+            br#"file = 'C:\some\path.md'
+
+[notebooks]
+w = "C:\Data\notes.md"
+"#,
+        )
+        .unwrap();
+
+        let result = load_config(Some(file.path().to_path_buf()));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Failed to parse config.toml"));
+        assert!(err.contains("Hint: Windows paths with backslashes must use single quotes"));
+    }
+
+    #[test]
+    fn test_load_config_other_errors_no_windows_hint() {
+        let mut file = NamedTempFile::new().unwrap();
+        // Write invalid TOML that doesn't involve backslashes (missing closing bracket)
+        file.write_all(
+            br#"file = '/path/to/notes.md'
+
+[notebooks
+w = '/path/to/work.md'
+"#,
+        )
+        .unwrap();
+
+        let result = load_config(Some(file.path().to_path_buf()));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        // Just verify it's a TOML error without the Windows hint
+        assert!(!err.contains("Hint: Windows paths with backslashes must use single quotes"));
+    }
+
+    #[test]
+    fn test_load_config_properly_escaped_backslashes() {
+        let mut file = NamedTempFile::new().unwrap();
+        // Write valid TOML with properly escaped backslashes in double quotes
+        file.write_all(
+            br#"file = 'C:\some\path.md'
+
+[notebooks]
+w = "C:\\Data\\notes.md"
+"#,
+        )
+        .unwrap();
+
+        let result = load_config(Some(file.path().to_path_buf()));
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.file, Some("C:\\some\\path.md".to_string()));
+        assert_eq!(
+            config.resolve_notebook_path("w"),
+            Some(PathBuf::from("C:\\Data\\notes.md"))
+        );
     }
 }
