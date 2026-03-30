@@ -1,5 +1,5 @@
 use clap::Parser;
-use recall_cli::{
+use recall_rs::{
     config::{load_config, resolve_file_path, Config},
     note::Note,
     storage::Storage,
@@ -82,7 +82,7 @@ fn handle_external_command(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use recall_cli::config::Config;
+    use recall_rs::config::Config;
     use std::collections::HashMap;
     use tempfile::TempDir;
 

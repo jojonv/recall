@@ -1,5 +1,5 @@
 [package]
-name = "recall-cli"
+name = "recall-rs"
 version = "0.1.0"
 edition = "2024"
 description = "A minimalistic CLI tool for note taking and recall."
