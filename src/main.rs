@@ -20,7 +20,14 @@ enum Commands {
     External(Vec<String>),
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let config = load_config(None)?;
     let default_file_path = resolve_file_path(&config)?;
