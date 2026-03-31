@@ -19,6 +19,7 @@ use std::io;
 enum DisplayItem {
     DayHeader(String),
     Note(usize),
+    Separator,
 }
 
 /// RAII guard to ensure terminal state is restored even on panic.
@@ -85,6 +86,9 @@ impl App {
             let note_date = note.timestamp.date_naive();
 
             if last_date != Some(note_date) {
+                if last_date.is_some() {
+                    display_items.push(DisplayItem::Separator);
+                }
                 let header = if note_date == today {
                     "Today".to_string()
                 } else if note_date == yesterday {
@@ -131,6 +135,7 @@ impl App {
                     };
                     ListItem::new(content).style(style)
                 }
+                DisplayItem::Separator => ListItem::new(String::new()),
             })
             .collect()
     }
@@ -299,8 +304,6 @@ mod tests {
 
     #[test]
     fn test_build_display_items_same_day() {
-        // Use a fixed time in the middle of the day to avoid crossing date boundaries
-        // Use a date in definitely in the past (2026-03-28)
         let base_time = Local.with_ymd_and_hms(2026, 3, 28, 12, 0, 0).unwrap();
         let notes = vec![
             Note::from_parts(base_time, "Morning note".to_string()),
@@ -310,14 +313,13 @@ mod tests {
 
         let display_items = App::build_display_items(&notes);
 
-        // Should have exactly 4 items: 1 header + 3 notes
+        // Should have exactly 4 items: 1 header + 3 notes (no separator for single group)
         assert_eq!(display_items.len(), 4);
         assert!(matches!(display_items[0], DisplayItem::DayHeader(_)));
         assert!(matches!(display_items[1], DisplayItem::Note(0)));
         assert!(matches!(display_items[2], DisplayItem::Note(1)));
         assert!(matches!(display_items[3], DisplayItem::Note(2)));
 
-        // Header should be the date since base_time is in the past
         if let DisplayItem::DayHeader(header) = &display_items[0] {
             assert_eq!(header, "2026-03-28");
         } else {
@@ -336,10 +338,16 @@ mod tests {
 
         let display_items = App::build_display_items(&notes);
 
-        // Should have 4 items: 2 headers + 2 notes
-        assert_eq!(display_items.len(), 4);
+        // Should have 5 items: 2 headers + 1 separator + 2 notes
+        assert_eq!(display_items.len(), 5);
 
-        // Verify structure: Header, Note, Header, Note
+        // Verify structure: Header, Note, Separator, Header, Note
+        assert!(matches!(display_items[0], DisplayItem::DayHeader(_)));
+        assert!(matches!(display_items[1], DisplayItem::Note(0)));
+        assert!(matches!(display_items[2], DisplayItem::Separator));
+        assert!(matches!(display_items[3], DisplayItem::DayHeader(_)));
+        assert!(matches!(display_items[4], DisplayItem::Note(1)));
+
         let headers: Vec<_> = display_items
             .iter()
             .filter_map(|item| match item {
@@ -368,6 +376,7 @@ mod tests {
 
         let display_items = App::build_display_items(&notes);
 
+        // Should have 2 items: 1 header + 1 note (no separator for single group)
         assert_eq!(display_items.len(), 2);
         if let DisplayItem::DayHeader(header) = &display_items[0] {
             assert_eq!(header, "2026-03-28");
@@ -459,8 +468,8 @@ mod tests {
 
         let display_items = App::build_display_items(&notes);
 
-        // Should have 4 items: 2 headers + 2 notes
-        assert_eq!(display_items.len(), 4);
+        // Should have 5 items: 2 headers + 1 separator + 2 notes
+        assert_eq!(display_items.len(), 5);
 
         // Get the headers
         let headers: Vec<_> = display_items
@@ -474,8 +483,6 @@ mod tests {
         // Should have exactly 2 headers
         assert_eq!(headers.len(), 2);
 
-        // First header should be the note created first (can be either Today or Yesterday depending on order)
-        // Second header should be the other one
         let has_today = headers.iter().any(|h| h == "Today");
         let has_yesterday = headers.iter().any(|h| h == "Yesterday");
 
@@ -520,5 +527,56 @@ mod tests {
 
         assert_eq!(formatted_undone, formatted_done);
         assert_eq!(formatted_done, "14:30:45 - Test note");
+    }
+
+    #[test]
+    fn test_build_display_items_three_days() {
+        let day1 = Local.with_ymd_and_hms(2026, 3, 28, 12, 0, 0).unwrap();
+        let day2 = Local.with_ymd_and_hms(2026, 3, 29, 12, 0, 0).unwrap();
+        let day3 = Local.with_ymd_and_hms(2026, 3, 30, 12, 0, 0).unwrap();
+        let notes = vec![
+            Note::from_parts(day1, "Day 1 note".to_string()),
+            Note::from_parts(day2, "Day 2 note".to_string()),
+            Note::from_parts(day3, "Day 3 note".to_string()),
+        ];
+
+        let display_items = App::build_display_items(&notes);
+
+        // Should have 8 items: 3 headers + 2 separators + 3 notes (2 separators between 3 groups)
+        assert_eq!(display_items.len(), 8);
+
+        assert!(matches!(display_items[0], DisplayItem::DayHeader(_)));
+        assert!(matches!(display_items[1], DisplayItem::Note(0)));
+        assert!(matches!(display_items[2], DisplayItem::Separator));
+        assert!(matches!(display_items[3], DisplayItem::DayHeader(_)));
+        assert!(matches!(display_items[4], DisplayItem::Note(1)));
+        assert!(matches!(display_items[5], DisplayItem::Separator));
+        assert!(matches!(display_items[6], DisplayItem::DayHeader(_)));
+        assert!(matches!(display_items[7], DisplayItem::Note(2)));
+    }
+
+    #[test]
+    fn test_separator_not_before_first_group() {
+        let day1 = Local.with_ymd_and_hms(2026, 3, 28, 12, 0, 0).unwrap();
+        let day2 = Local.with_ymd_and_hms(2026, 3, 29, 12, 0, 0).unwrap();
+        let notes = vec![
+            Note::from_parts(day1, "Day 1 note".to_string()),
+            Note::from_parts(day2, "Day 2 note".to_string()),
+        ];
+
+        let display_items = App::build_display_items(&notes);
+
+        // First item should never be a separator
+        assert!(!matches!(display_items[0], DisplayItem::Separator));
+
+        // Should have 5 items: 2 headers + 1 separator + 2 notes
+        assert_eq!(display_items.len(), 5);
+
+        // Verify structure: Header, Note, Separator, Header, Note
+        assert!(matches!(display_items[0], DisplayItem::DayHeader(_)));
+        assert!(matches!(display_items[1], DisplayItem::Note(0)));
+        assert!(matches!(display_items[2], DisplayItem::Separator));
+        assert!(matches!(display_items[3], DisplayItem::DayHeader(_)));
+        assert!(matches!(display_items[4], DisplayItem::Note(1)));
     }
 }
