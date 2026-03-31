@@ -15,30 +15,28 @@ A fast terminal-based note-taking app written in Rust. Notes are stored as plain
 ## Installation
 
 ```sh
-cargo build --release
+cargo install recall-rs
 ```
-
-The binary will be at `target/release/recall` (or `target/release/recall.exe` on Windows).
-
-For quick access, add an alias:
-
-```sh
-alias r=recall
-```
-
 ## Usage
 
 ### Add a note to the default notebook
 
 ```sh
-recall buy groceries
-recall fix the login bug
+recall-rs buy groceries
+recall-rs fix the login bug
 ```
 
 ### Browse notes (TUI)
 
+#### To browse default (file)
+
 ```sh
-recall
+recall-rs
+```
+#### To browse different (custom) notebook
+
+```sh
+recall-rs w
 ```
 
 Opens a fullscreen terminal UI where you can navigate and manage notes.
@@ -52,12 +50,12 @@ Opens a fullscreen terminal UI where you can navigate and manage notes.
 
 ### Multiple notebooks
 
-Use notebook aliases to target different files:
+You can configure multiple notebook aliases to target different files:
 
 ```sh
-recall w meeting at 3pm    # adds to work notebook
-recall p call dentist       # adds to personal notebook
-recall w                    # opens work notebook in TUI
+recall-rs w meeting at 3pm    # adds to work notebook
+recall-rs p call dentist       # adds to personal notebook
+recall-rs w                    # opens work notebook in TUI
 ```
 
 ## Configuration
@@ -73,7 +71,7 @@ p = "~/notes/personal.md"
 j = "~/journal/daily.md"
 ```
 
-If no config file exists, `recall` uses `~/.recall/notes.md` as the default notebook.
+If no config file exists, `recall-rs` uses `~/.recall/notes.md` as the default notebook.
 
 ## Storage Format
 
