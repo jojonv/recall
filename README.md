@@ -1,4 +1,4 @@
-# recall
+# recall-rs
 
 A fast terminal-based note-taking app written in Rust. Notes are stored as plain markdown — compatible with Obsidian.
 
