@@ -102,6 +102,14 @@ impl App {
         display_items
     }
 
+    fn format_note_line(note: &Note) -> String {
+        format!(
+            "{} - {}",
+            note.timestamp.format("%H:%M:%S"),
+            note.text.lines().next().unwrap_or("")
+        )
+    }
+
     fn build_list_items(&self) -> Vec<ListItem<'static>> {
         self.display_items
             .iter()
@@ -113,11 +121,7 @@ impl App {
                 ),
                 DisplayItem::Note(idx) => {
                     let note = &self.notes[*idx];
-                    let content = format!(
-                        "{} - {}",
-                        note.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                        note.text.lines().next().unwrap_or("")
-                    );
+                    let content = Self::format_note_line(note);
                     let style = if note.done {
                         Style::default()
                             .add_modifier(Modifier::DIM)
@@ -485,5 +489,36 @@ mod tests {
             "Expected to find 'Yesterday' label in headers, got: {:?}",
             headers
         );
+    }
+
+    #[test]
+    fn test_format_note_line_shows_time_only() {
+        let timestamp = Local.with_ymd_and_hms(2026, 3, 31, 14, 30, 45).unwrap();
+        let note = Note::from_parts(timestamp, "Test note".to_string());
+        let formatted = App::format_note_line(&note);
+
+        assert_eq!(formatted, "14:30:45 - Test note");
+    }
+
+    #[test]
+    fn test_format_note_line_multiline_shows_first_line() {
+        let timestamp = Local.with_ymd_and_hms(2026, 3, 31, 14, 30, 45).unwrap();
+        let note = Note::from_parts(timestamp, "First line\nSecond line\nThird line".to_string());
+        let formatted = App::format_note_line(&note);
+
+        assert_eq!(formatted, "14:30:45 - First line");
+    }
+
+    #[test]
+    fn test_format_note_line_done_note_same_format() {
+        let timestamp = Local.with_ymd_and_hms(2026, 3, 31, 14, 30, 45).unwrap();
+        let mut note = Note::from_parts(timestamp, "Test note".to_string());
+        let formatted_undone = App::format_note_line(&note);
+
+        note.toggle_done();
+        let formatted_done = App::format_note_line(&note);
+
+        assert_eq!(formatted_undone, formatted_done);
+        assert_eq!(formatted_done, "14:30:45 - Test note");
     }
 }
